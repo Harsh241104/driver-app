@@ -1,32 +1,18 @@
 import "dotenv/config";
 import express from "express";
-import pg from "pg";
+import { pool, requireDatabase } from "./config/database.js";
+import authRoutes from "./routes/auth-routes.js";
+import deliveriesRoutes from "./routes/deliveries-routes.js";
+import earningsRoutes from "./routes/earnings-routes.js";
 
-const { Pool } = pg;
 const port = Number(process.env.API_PORT || 3001);
 const demoDriverId = "DRV-104";
 const databaseDriverId = process.env.NEON_DRIVER_USER_ID;
 const databaseRouteId = process.env.NEON_ROUTE_ID;
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000
-  })
-  : null;
 
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "32kb" }));
-
-function requireDatabase(_request, response, next) {
-  if (!pool) {
-    response.status(503).json({ error: "DATABASE_URL is not configured. Add your Neon connection string to the local .env file." });
-    return;
-  }
-  next();
-}
 
 function handleDatabaseError(error, response) {
   console.error("Database request failed:", error.message);
@@ -42,10 +28,14 @@ app.get("/api/health", requireDatabase, async (_request, response) => {
   }
 });
 
+app.use("/api/auth", requireDatabase, authRoutes);
+app.use("/api/deliveries", requireDatabase, deliveriesRoutes);
+app.use("/api/earnings", requireDatabase, earningsRoutes);
+
 app.get("/api/routes/:routeId", requireDatabase, async (request, response) => {
   const routeId = request.params.routeId === "RT-RAIPUR-104" ? databaseRouteId : request.params.routeId;
   if (!routeId || !databaseDriverId) {
-    response.status(503).json({ error: "NEON_DRIVER_USER_ID and NEON_ROUTE_ID are not configured. Run neon-demo-seed.sql and set both IDs in .env." });
+    response.status(503).json({ error: "NEON_DRIVER_USER_ID and NEON_ROUTE_ID are not configured. Run database/demo-seed.sql and set both IDs in .env." });
     return;
   }
   const client = await pool.connect().catch((error) => {
@@ -324,6 +314,15 @@ app.post("/driver/events", requireDatabase, async (request, response) => {
             [event.order_id, stopResult.rows[0].order_status, nextOrderStatus, event.stop_id, databaseDriverId]
           );
 
+          if (completed) {
+            await client.query(
+              `INSERT INTO earnings (driver_id, route_stop_id, amount, currency)
+               VALUES ($1::uuid, $2::uuid, 45.00, 'INR')
+               ON CONFLICT (route_stop_id) DO NOTHING`,
+              [databaseDriverId, event.stop_id]
+            );
+          }
+
           const unfinished = await client.query(
             `SELECT 1
              FROM route_stops
@@ -367,7 +366,7 @@ app.use((error, _request, response, _next) => {
 const server = app.listen(port, "127.0.0.1", () => {
   console.log(`Neon API listening at http://127.0.0.1:${port}`);
   if (!pool) console.error("DATABASE_URL is missing. Copy .env.example to .env and add your Neon connection string.");
-  if (!databaseDriverId || !databaseRouteId) console.error("Demo Neon IDs are missing. Run neon-demo-seed.sql and configure the two IDs in .env.");
+  if (!databaseDriverId || !databaseRouteId) console.error("Demo Neon IDs are missing. Run database/demo-seed.sql and configure the two IDs in .env.");
 });
 
 async function shutdown() {
