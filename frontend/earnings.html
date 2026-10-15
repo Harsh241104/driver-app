@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101c2b">
+    <meta name="description" content="Review your completed delivery earnings.">
+    <title>Earnings | Raipur Driver Console</title>
+  </head>
+  <body>
+    <main class="page-shell page-shell-wide">
+      <header class="page-header">
+        <a class="brand" href="/index.html">RAIPUR<span>DRIVER CONSOLE</span></a>
+        <nav aria-label="Account navigation">
+          <a href="/index.html">Route demo</a>
+          <button id="sign-out" class="text-button" type="button" hidden>Sign out</button>
+        </nav>
+      </header>
+      <section class="earnings-panel" aria-labelledby="page-title">
+        <p class="eyebrow">DRIVER ACCOUNT</p>
+        <h1 id="page-title">Your earnings.</h1>
+        <p id="welcome" class="intro">Loading your account…</p>
+        <div class="earnings-summary">
+          <span class="summary-label">TOTAL EARNED</span>
+          <strong id="total-earned">—</strong>
+          <span id="delivery-count" class="summary-label"></span>
+        </div>
+        <p id="page-message" class="form-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Order</th><th>Recipient</th><th>Locality</th><th>Earned</th><th>Status</th><th>Date</th></tr>
+            </thead>
+            <tbody id="earnings-list"></tbody>
+          </table>
+        </div>
+      </section>
+      <footer class="page-footer">Delivery earnings are calculated at ₹45 per completed delivery.</footer>
+    </main>
+    <script type="module" src="/src/pages/earnings.js"></script>
+  </body>
+</html>

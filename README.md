@@ -1,8 +1,8 @@
 # Raipur Driver Console
 
-A React-based last-mile delivery driver console for a sample delivery route in Raipur, Chhattisgarh. The app demonstrates driver sign-in and registration, a route manifest, step-by-step delivery tracking, proof of delivery, delivery exceptions, a local event queue, and a demo earnings and activity view.
+A last-mile delivery driver console for a sample delivery route in Raipur, Chhattisgarh. The frontend uses plain HTML, CSS, and browser JavaScript; separate account and earnings pages use an Express API backed by Neon PostgreSQL. The original route console remains available as an offline-capable demo.
 
-> **Demo application:** Driver profiles, route stops, customer OTPs, earnings, and event synchronization are demonstration data and behavior. The app does not include a production authentication service, dispatch backend, payment service, or server-side persistence.
+> **Demo application:** Route stops, customer OTPs, and the ₹45 per-delivery earning rate are demonstration data. Authentication uses server-side password hashes and database-backed sessions, but the app is not a production dispatch or payout service.
 
 ## Contents
 
@@ -15,6 +15,8 @@ A React-based last-mile delivery driver console for a sample delivery route in R
 - [Architecture](#architecture)
 - [Route and demo data](#route-and-demo-data)
 - [Neon database SQL](#neon-database-sql)
+- [Database fields and sample data](#database-fields-and-sample-data)
+- [Modular API](#modular-api)
 - [Offline behavior and data storage](#offline-behavior-and-data-storage)
 - [Event synchronization](#event-synchronization)
 - [Project structure](#project-structure)
@@ -27,8 +29,8 @@ A React-based last-mile delivery driver console for a sample delivery route in R
 
 ### Driver access and profile
 
-- Sign in with a locally stored driver ID or mobile number and a four-digit demo passcode.
-- Create a driver profile on the current browser/device.
+- Register and sign in through separate server-backed account pages.
+- Keep the existing offline route-demo profile and sign-in flow available on the main page.
 - Edit the current driver's name, mobile number, and vehicle registration.
 - Normalize phone numbers to their final 10 digits for matching.
 - Display a generated driver ID and passcode after local registration.
@@ -67,14 +69,13 @@ A React-based last-mile delivery driver console for a sample delivery route in R
 
 ## Technology stack
 
-- **React 19** for the user interface and component state.
+- **HTML, CSS, and JavaScript ES modules** for the browser interface and application state.
 - **Vite 6** for the development server and production bundling.
 - **Express** for a server-side API and **node-postgres (`pg`)** for Neon/PostgreSQL access.
-- **JavaScript ES modules** and JSX.
-- **CSS** in the root-level `styles.css`.
+- **CSS** in `frontend/assets/css/`.
 - **Browser APIs** including `localStorage`, `fetch`, Geolocation, Canvas, object URLs, and optional vibration.
 
-The Express API reads the Neon connection string from the server-only `DATABASE_URL` environment variable. The browser never receives database credentials. Route data and delivery-event synchronization are available through the API. Sign-in, driver registration, and profile edits remain local demo flows.
+The Express API reads the Neon connection string from the server-only `DATABASE_URL` environment variable in the ignored local `.env` file. The browser never receives database credentials. Account, delivery, and earnings routes use separate controller and router modules; account sessions are stored as hashed refresh tokens in PostgreSQL and sent to the browser in an HTTP-only cookie.
 
 ## Requirements
 
@@ -90,8 +91,7 @@ Open PowerShell in the project directory:
 ```powershell
 cd "C:\path\to\ved-driverapp"
 npm install
-Copy-Item .env.example .env
-# Edit .env and replace DATABASE_URL with the connection string from your Neon development branch.
+# Create or edit the ignored .env file and set DATABASE_URL and the Neon demo IDs.
 npm run dev
 ```
 
@@ -103,17 +103,18 @@ http://localhost:5173/
 
 Open that URL in a browser. Keep the terminal running while you use the app; stop the server with **Ctrl+C**.
 
-Before running the demo seed, create a Neon development branch. The screenshot showed the **production** branch; do not seed demo records into production. In that development branch:
+Before running the demo seed, create a Neon development branch. Use a Neon development branch rather than production for demo records. In that development branch:
 
-1. Open **SQL Editor** and create a query.
-2. Paste the full contents of [`neon-demo-seed.sql`](./neon-demo-seed.sql) and select **Run**.
+1. Open **SQL Editor** and create a query. On a new database, run the normalized base schema in [`database/schema.sql`](./database/schema.sql) first.
+2. Paste the full contents of [`database/demo-seed.sql`](./database/demo-seed.sql) and select **Run**. It adds the event tables needed by this app and inserts repeatable demo route records.
 3. Confirm the development branch now has one demo driver, one route, and four route stops.
-4. Copy the development branch's connection string into the ignored local `.env` file as `DATABASE_URL`. Keep `sslmode=verify-full`; the demo driver and route UUIDs are already listed in `.env.example`.
+4. Set the development branch's connection string in the ignored local `.env` file as `DATABASE_URL`. Keep `sslmode=verify-full`, and set `NEON_DRIVER_USER_ID` and `NEON_ROUTE_ID` to the seeded demo UUIDs.
 5. Run `npm run dev`, open the Vite URL, and sign in with the local demo credentials `DRV-104` / `1042`.
+6. For database-backed accounts, open `/register.html` to create a driver account, then use `/earnings.html`. A dispatcher must assign a route to the new driver before the deliveries API returns stops.
 
 The seed script is repeatable for its fixed demo IDs and resets those demo orders/stops to pending when re-run. Check the API connection at `http://127.0.0.1:3001/api/health`.
 
-The API uses the UUID-based schema already in your Neon project (`users`, `drivers`, `vehicles`, `warehouses`, `routes`, `route_stops`, and `orders`) plus the `driver_events` table added by the demo seed. The seed script's two fixed UUIDs are already in `.env.example`. Confirm they are present in `.env` as `NEON_DRIVER_USER_ID` and `NEON_ROUTE_ID`.
+The API uses the UUID-based schema (`users`, `user_roles`, `refresh_tokens`, `drivers`, `vehicles`, `warehouses`, `routes`, `route_stops`, `orders`, and `order_events`) plus the `driver_events` and `earnings` tables added by the demo seed. Set the seed script's fixed UUIDs in `.env` as `NEON_DRIVER_USER_ID` and `NEON_ROUTE_ID`.
 
 To expose the development server on the local network, use:
 
@@ -147,66 +148,63 @@ New profiles can be created with the registration dialog. Registration stays in 
 6. To report an unsuccessful delivery, open **Report Delivery Issue**, choose a reason, optionally add a note, and confirm with the slider.
 7. Continue through the route. Use the Route, Earnings, and Inbox navigation to view the route, demo totals, and event activity.
 
-Each customer stop includes its test OTP in the proof-of-delivery dialog. The fixed route data is in [`src/route.js`](./src/route.js).
+Each customer stop includes its test OTP in the proof-of-delivery dialog. The fixed route data is in [`frontend/src/route.js`](./frontend/src/route.js).
 
 ## Architecture
 
-The app separates its screen and dialog UI from the central state and workflow controller:
+The offline route console is implemented without a frontend framework. Its screen templates and workflow controller are in one JavaScript entry module. The server-backed login, registration, and earnings pages are separate HTML entry points with dedicated page scripts:
 
 ```text
-index.html
-└── src/main.jsx
-    ├── styles.css
-    └── src/DriverApp.jsx
-        ├── screen components
-        ├── workflow/dialog components
-        └── src/route.js (fixture data, local-storage helpers, event labels)
+frontend/
+├── index.html
+├── login.html
+├── register.html
+├── earnings.html
+├── assets/css/
+│   ├── styles.css
+│   └── pages.css
+└── src/
+    ├── main.js
+    ├── route.js
+    └── pages/
+        ├── login.js
+        ├── register.js
+        └── earnings.js
+backend/
+├── config/
+├── controllers/
+├── middleware/
+├── routes/
+└── index.js
+database/
+├── schema.sql
+└── demo-seed.sql
 ```
 
 ### Application bootstrap
 
-- `index.html` provides the root element and loads `src/main.jsx`.
-- `src/main.jsx` imports React, `DriverApp`, and `styles.css`, then mounts the app inside `React.StrictMode`.
+- `frontend/index.html` provides the root element and loads `frontend/src/main.js` as a native JavaScript module.
+- `frontend/src/main.js` imports the shared stylesheet and route helpers, renders the application into `#root`, binds browser events, and coordinates the driver workflows.
 
-### App controller
+### Application state and screens
 
-`src/DriverApp.jsx` owns shared state and coordinates application behavior:
+`frontend/src/main.js` owns shared application state:
 
 - Active screen, selected driver, current stop, delivery statuses, route stage, and ETA.
 - Registration/profile form state and dialog visibility.
 - Proof-of-delivery and exception state.
 - Offline event outbox, network state, and event synchronization.
-- Driver telemetry and browser event/timer cleanup.
+- Driver telemetry, browser connectivity, and timers.
 
-The controller passes state and callbacks to presentational screen and dialog components. Navigation uses React state; it is not a URL-based router.
-
-### Screen components
-
-| File | Responsibility |
-| --- | --- |
-| `src/auth.jsx` | Driver sign-in screen and entry point to registration |
-| `src/manifest.jsx` | Route summary, ordered stop list, and route-start action |
-| `src/activeRoute.jsx` | Current stop, ETA, arrival details, map link, and stop actions |
-| `src/completedRoute.jsx` | Delivered/failed/queued route summary |
-| `src/earnings.jsx` | Demo pay estimate and completed-order list |
-| `src/inbox.jsx` | Local event activity and queue/sync status |
-
-### Workflow/dialog components
-
-| File | Responsibility |
-| --- | --- |
-| `src/registration.jsx` | Create a local driver profile |
-| `src/profile.jsx` | Edit the current local profile |
-| `src/proofOfDelivery.jsx` | Optional photo, OTP, signature, and completion slider |
-| `src/deliveryException.jsx` | Failure reason, optional note, and exception confirmation |
+The app uses delegated DOM events and native `<dialog>` elements instead of framework components. Navigation is in-memory rather than URL-based. The route, earnings, Inbox, registration, profile, proof-of-delivery, and delivery-exception UI are rendered from templates in `frontend/src/main.js`.
 
 ### Shared data and helpers
 
-`src/route.js` exports the fixed route manifest, demo driver, exception reason choices, Inbox event labels, local-storage key names, and helpers for JSON storage, phone normalization, initials, and event IDs.
+`frontend/src/route.js` exports the fixed route manifest, demo driver, exception reason choices, Inbox event labels, local-storage key names, and helpers for JSON storage, phone normalization, initials, and event IDs.
 
 ### Styling
 
-`styles.css` contains the global styles, component styles, and responsive layout rules. Components use descriptive class names from this shared stylesheet.
+`frontend/assets/css/styles.css` and `frontend/assets/css/pages.css` contain the main console and account-page styles.
 
 ## Route and demo data
 
@@ -214,17 +212,58 @@ The route fixture has ID `RT-RAIPUR-104`, one pickup hub (`WH-RAIPUR`), and four
 
 The route data is static JavaScript, not loaded from a dispatch API. The displayed date and some labels are fixed demo copy. The weather display is also illustrative and is not a live weather integration.
 
-## Neon database SQL and API
+## Neon database SQL
 
-[`neon-demo-seed.sql`](./neon-demo-seed.sql) adapts the existing normalized Neon schema by adding demo-only route fields and an event table, then inserting repeatable sample rows. [`database.sql`](./database.sql) is a separate starter schema for a fresh database and is **not** the script to run against your existing schema. The Express implementation is in [`server/index.js`](./server/index.js).
+[`database/schema.sql`](./database/schema.sql) defines the normalized database, including users, drivers, orders, routes, and earnings. [`database/demo-seed.sql`](./database/demo-seed.sql) adds demo-only route fields, the event table, and repeatable route fixtures for an existing database. The Express API entry point is [`backend/index.js`](./backend/index.js).
 
-After running the seed in a development branch, configure `.env` and restart `npm run dev`. The app reads the route manifest/status from Neon and syncs activity events to Neon. Earnings uses the app's demo rate against completed route statuses.
+After running the base schema and seed in a development branch, configure `.env` and restart `npm run dev`. The existing route console reads the manifest and syncs activity events to Neon. Authenticated account pages use the modular APIs below. Each delivered stop creates one earnings record at the demo rate of ₹45.
 
-The passcodes, OTPs, customer names, and addresses are sample data. The seeded user has no usable database password, and app sign-in remains the existing local demo flow. The local API is not production authentication: it does not issue user sessions or authorize driver ownership of event writes. Do not expose it publicly. Production deployment needs authenticated and authorized API endpoints.
+The seeded user's password is deliberately unusable; register an account at `/register.html` to use the authenticated account and earnings APIs. The original offline route console and its `/driver/events` demo endpoint still use fixed demo identity and route values and are not production authentication. Do not expose those demo endpoints publicly.
+
+## Database fields and sample data
+
+The full normalized table definitions, constraints, and indexes are in [`database/schema.sql`](./database/schema.sql). The API uses these fields:
+
+| Table | Required/important fields |
+| --- | --- |
+| `users` | `id`, `email` or `phone`, `password_hash`, `full_name`, `is_active`, login timestamps |
+| `user_roles` | `user_id`, `role` (`driver`) |
+| `drivers` | `user_id`, optional `vehicle_id`, `status` |
+| `vehicles` | `type`, `registration_number`, `max_weight_kg`, `max_volume_m3`, `is_active` |
+| `merchants` | `name`, contact email/phone, `is_active` |
+| `warehouses` | `code`, `name`, `address`, geographic `location`, `is_active` |
+| `orders` | merchant/warehouse IDs, `merchant_order_ref`, `status`, recipient name/phone, delivery address/location, delivery window, weight/volume, tracking token |
+| `routes` | warehouse/driver/vehicle IDs, `status`, route distance/duration and timestamps |
+| `route_stops` | `route_id`, `order_id`, sequence, `status`, planned location/arrival, completion time and failure reason |
+| `order_events` | order, from/to status, route stop, actor and occurrence time |
+| `earnings` | `driver_id`, unique `route_stop_id`, positive `amount`, `currency`, `status`, `earned_at`, optional `paid_at` |
+| `refresh_tokens` | user ID, hashed token, expiry and revocation timestamps |
+| `driver_events` | event ID/type, driver, route/stop/order, coordinates, metadata, occurrence time |
+
+The repeatable sample records in [`database/demo-seed.sql`](./database/demo-seed.sql) include driver `Arjun Sahu` (`driver.demo@raipur.example.test`, ID `10400000-0000-4000-8000-000000000001`), vehicle `CG 04 AB 1040`, hub `WH-RAIPUR`, route ID `10400000-0000-4000-8000-000000000005`, and orders `ORD-7890` through `ORD-7893`. Recipients include Ananya Sharma at Shankar Nagar (2.40 kg), Rohit Verma at Telibandha (1.80 kg), Meera Agrawal at Pandri (3.10 kg), and Dev Patel at Civil Lines (2.70 kg). Demo OTPs are `2468`, `1357`, `8642`, and `5791`. A completed stop (for example `10400000-0000-4000-8000-000000000201`) earns `45.00 INR` with initial earning status `pending`. These are development fixtures, not real customer information or usable account credentials.
+
+## Modular API
+
+All request and response bodies are JSON. Registration and login set an HTTP-only, same-site cookie; the browser does not store session tokens in local storage. Authenticated endpoints only return or mutate records assigned to the signed-in driver.
+
+| Method and path | Authentication | Request | Response |
+| --- | --- | --- | --- |
+| `POST /api/auth/register` | No | `{ "fullName": "Asha Rao", "email": "asha@example.com", "phone": "+919876543210", "password": "at-least-8-chars" }` (`phone` optional) | `201 { "user": { "id", "email", "phone", "fullName" } }` and session cookie |
+| `POST /api/auth/login` | No | `{ "email": "asha@example.com", "password": "..." }` | `200 { "user": { "id", "email", "phone", "fullName" } }` and session cookie |
+| `POST /api/auth/logout` | Optional session | No body | `204`; revokes the session and clears cookie |
+| `GET /api/auth/me` | Driver session | None | `200 { "user": { "id", "email", "phone", "fullName" } }` |
+| `GET /api/deliveries` | Driver session | None | `200 { "deliveries": [...] }` for routes assigned to this driver |
+| `POST /api/deliveries/:stopId/status` | Driver session | `{ "status": "delivered" }` or `{ "status": "failed", "failureReason": "recipient_unavailable" }` | `200 { "delivery": { "routeStopId", "orderId", "status" } }`; updates stop, order, and order history atomically |
+| `GET /api/earnings` | Driver session | None | `200 { "summary": { "totalAmount", "currency", "deliveryCount" }, "earnings": [...] }` |
+| `POST /api/earnings` | Driver session | `{ "routeStopId": "<completed route-stop UUID>" }` | `201 { "earning": {...} }`; records ₹45 once for an assigned completed stop; retries return the existing record |
+| `GET /api/health` | Database configured | None | Database connection status |
+| `GET /api/routes/:routeId`, `/driver/events` | Demo API | Route ID or event JSON | Existing route manifest and offline event sync for the fixed demo driver |
+
+New accounts start with driver status `pending`. Dispatch must assign a route before the authenticated deliveries API can list stops. Earnings are demo estimates, not payment or payout transactions.
 
 ## Offline behavior and data storage
 
-The browser's `localStorage` is used for local demo persistence. Current keys are declared in `src/route.js`:
+The browser's `localStorage` is used for local demo persistence. Current keys are declared in `frontend/src/route.js`:
 
 | Key | Stored value |
 | --- | --- |
@@ -268,29 +307,14 @@ The API stores each event in Neon and treats repeated event IDs as idempotent. A
 
 ```text
 .
-├── index.html
-├── database.sql
-├── neon-demo-seed.sql
+├── backend/
+├── database/
+├── docs/
+├── frontend/
 ├── package.json
 ├── package-lock.json
-├── server/
-│   └── index.js
-├── styles.css
 ├── vite.config.js
-└── src/
-    ├── DriverApp.jsx
-    ├── activeRoute.jsx
-    ├── auth.jsx
-    ├── completedRoute.jsx
-    ├── deliveryException.jsx
-    ├── earnings.jsx
-    ├── inbox.jsx
-    ├── main.jsx
-    ├── manifest.jsx
-    ├── profile.jsx
-    ├── proofOfDelivery.jsx
-    ├── registration.jsx
-    └── route.js
+└── README.md
 ```
 
 Generated output is written to `dist/` and is excluded from source control along with `node_modules/` and Vite's `.vite/` cache.
@@ -301,7 +325,9 @@ Run scripts from the project root:
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Start the Vite development server |
+| `npm run dev` | Start the Express API and Vite development server |
+| `npm run dev:api` | Start the Express API in watch mode |
+| `npm run start:api` | Start the Express API |
 | `npm run build` | Build the production site into `dist/` |
 | `npm run preview` | Preview the production build locally (run `npm run build` first) |
 
@@ -318,9 +344,9 @@ There is no dedicated test or lint script configured in `package.json`.
 
 ## Known limitations and production considerations
 
-- Sign-in and registration are local demo flows. Passcodes are stored with local profiles and displayed in the UI; do not use this as real identity verification.
+- The main offline route console still uses local demo profiles and passcodes. The separate `/login.html` and `/register.html` pages use server-backed credentials.
 - Route stops, customer data, OTPs, coordinates, and failure reasons are hard-coded fixtures.
-- The app has no backend implementation for dispatch, event ingestion, identity, route assignment, or earnings.
+- The Express API authenticates new driver accounts and scopes delivery/earnings records by driver, but dispatch assignment and payouts are not implemented.
 - Earnings are a fixed demo calculation of ₹45 per completed stop, not a payout integration.
 - Event delivery is a simple POST loop. Production use needs an authenticated API, server-side idempotency, robust retry/backoff, payload validation, and visible reporting for permanent failures.
 - Local storage is not encrypted, is scoped to the browser origin, and may be cleared by the user or browser. It is not a durable or secure database.
@@ -332,6 +358,12 @@ There is no dedicated test or lint script configured in `package.json`.
 Before production deployment, connect real authentication and dispatch APIs, define secure storage and photo/signature handling, add server-side authorization and event validation, and add automated tests for route and delivery workflows.
 
 ## Troubleshooting
+
+### Neon connection times out
+
+The API health endpoint at `http://127.0.0.1:3001/api/health` must return HTTP 200 with `{"status":"ok","database":"connected"}`. In the current local setup, the Neon hostname resolves and TCP port 5432 accepts a connection, but PostgreSQL connections through both the configured pooler hostname and the corresponding direct hostname time out before authentication. This means database connectivity is not yet confirmed; a reachable TCP port alone does not prove the PostgreSQL/TLS session is working.
+
+Check that the Neon project and branch are active, copy a fresh connection string from the Neon dashboard, and put it in the ignored `.env` with `sslmode=verify-full`. Restart the API after changing `.env`. If the failure persists, try the connection from another trusted network and inspect local firewall/VPN rules for PostgreSQL TLS traffic. The previously shared database password should be rotated before reuse. Never paste database credentials into source files or Markdown.
 
 ### `Unknown command: "dev"`
 
@@ -356,5 +388,5 @@ Use the exact **Local** URL shown by Vite. If port `5173` is already in use, Vit
 
 ### Events remain queued
 
-The repository does not include the `/driver/events` backend. Pending events are expected to remain queued unless a compatible endpoint is available and returns a successful HTTP response.
+Pending events remain queued unless the Express API is running, configured with Neon, and returns a successful HTTP response. Check `http://127.0.0.1:3001/api/health` and the API terminal for connection details.
 # driver-app

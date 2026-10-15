@@ -35,6 +35,22 @@ CREATE INDEX IF NOT EXISTS driver_events_route_time_idx
 CREATE INDEX IF NOT EXISTS driver_events_driver_time_idx
   ON driver_events (driver_user_id, occurred_at DESC);
 
+CREATE TABLE IF NOT EXISTS earnings (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  driver_id uuid NOT NULL REFERENCES drivers(user_id),
+  route_stop_id uuid NOT NULL UNIQUE REFERENCES route_stops(id),
+  amount numeric(10, 2) NOT NULL CHECK (amount > 0),
+  currency char(3) NOT NULL DEFAULT 'INR',
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+  earned_at timestamptz NOT NULL DEFAULT now(),
+  paid_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((status = 'paid') = (paid_at IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_earnings_driver_earned
+  ON earnings (driver_id, earned_at DESC);
+
 INSERT INTO users (id, email, phone, password_hash, full_name)
 VALUES (
   '10400000-0000-4000-8000-000000000001',
